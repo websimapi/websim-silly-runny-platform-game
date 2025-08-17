@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 class Player {
-    constructor(isLocal) {
+    constructor(isLocal, camera) {
         this.isLocal = isLocal;
+        this.camera = camera; // Used for camera-relative movement
         this.keys = {};
         
         // Create a wacky character model
@@ -33,7 +34,9 @@ class Player {
         this.body = new CANNON.Body({
             mass: 5,
             material: new CANNON.Material('player'),
-            angularDamping: 1.0
+            angularDamping: 0.9,
+            linearDamping: 0.9, // Add damping to slow down the player naturally
+            fixedRotation: true, // Prevent player from tipping over
         });
         this.body.addShape(shape, new CANNON.Vec3(0, 0, 0));
         this.body.position.set(Math.random() * 10 - 5, 5, 0);
@@ -142,8 +145,8 @@ class Player {
     
     update(deltaTime, presenceState) {
         if (this.isLocal) {
-            this.handleInput();
-        } else if(presenceState) {
+            this.handleInput(deltaTime);
+        } else if(presenceState && presenceState.position) {
             this.networkPosition.set(
                 presenceState.position.x,
                 presenceState.position.y,
@@ -158,50 +161,86 @@ class Player {
 
             this.mesh.position.lerp(this.networkPosition, 0.2);
             this.mesh.quaternion.slerp(this.networkQuaternion, 0.2);
+            // Also sync physics body for remote players for potential interactions
+            if (this.body) {
+                this.body.position.copy(this.mesh.position);
+                this.body.quaternion.copy(this.mesh.quaternion);
+            }
             return;
         }
 
         // Always sync mesh to physics body for local player
-        this.mesh.position.copy(this.body.position);
-        this.mesh.quaternion.copy(this.body.quaternion);
+        if (this.body) {
+            this.mesh.position.copy(this.body.position);
+            this.mesh.quaternion.copy(this.body.quaternion);
+        }
     }
     
-    handleInput() {
-        const speed = 20;
-        const jumpForce = 20;
+    handleInput(deltaTime) {
+        const speed = 2.5;
+        const jumpForce = 100;
         
+        const forward = new THREE.Vector3();
+        const right = new THREE.Vector3();
+        
+        this.camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+        
+        right.crossVectors(this.camera.up, forward).normalize();
+        
+        const impulse = new CANNON.Vec3(0, 0, 0);
+        let appliedImpulse = false;
+
         // Forward/backward movement
         if (this.keys['w']) {
-            this.body.velocity.z = -speed;
-        } else if (this.keys['s']) {
-            this.body.velocity.z = speed;
-        } else {
-            this.body.velocity.z *= 0.9; // damping
+            impulse.x -= forward.x * speed;
+            impulse.z -= forward.z * speed;
+            appliedImpulse = true;
+        }
+        if (this.keys['s']) {
+            impulse.x += forward.x * speed;
+            impulse.z += forward.z * speed;
+            appliedImpulse = true;
         }
         
         // Left/right movement
         if (this.keys['a']) {
-            this.body.velocity.x = -speed;
-        } else if (this.keys['d']) {
-            this.body.velocity.x = speed;
-        } else {
-            this.body.velocity.x *= 0.9; // damping
+            impulse.x += right.x * speed;
+            impulse.z += right.z * speed;
+            appliedImpulse = true;
+        }
+        if (this.keys['d']) {
+            impulse.x -= right.x * speed;
+            impulse.z -= right.z * speed;
+            appliedImpulse = true;
+        }
+        
+        if(appliedImpulse) {
+             this.body.applyImpulse(impulse, this.body.position);
         }
 
         // Jump
         if (this.keys[' ']) {
            if (this.canJump()) {
-             this.body.velocity.y = jumpForce;
+             this.body.applyImpulse(new CANNON.Vec3(0, jumpForce, 0), this.body.position);
            }
+           // Prevent continuous jumping by consuming the key press
+           this.keys[' '] = false;
         }
     }
     
     canJump() {
         const from = this.body.position;
-        const to = new CANNON.Vec3(from.x, from.y - 1.1, from.z);
+        const to = new CANNON.Vec3(from.x, from.y - 1.01, from.z); // Ray slightly longer than sphere radius
         const result = new CANNON.RaycastResult();
-        this.body.world.raycastClosest(from, to, {}, result);
-        return result.hasHit;
+        // Use a temporary variable for the world if this.body.world is not guaranteed
+        const world = this.body.world;
+        if (world) {
+             world.raycastClosest(from, to, {}, result);
+             return result.hasHit;
+        }
+        return false;
     }
 
     getSyncData() {
