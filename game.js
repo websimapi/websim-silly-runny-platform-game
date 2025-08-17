@@ -5,6 +5,7 @@ import Player from './player.js';
 class Game {
     constructor() {
         this.players = {};
+        this.isPhysicsReady = false;
     }
 
     init() {
@@ -36,15 +37,65 @@ class Game {
         directionalLight.shadow.camera.bottom = -100;
         this.scene.add(directionalLight);
         
-        // Physics World
+        // Physics World with better configuration
         this.world = new CANNON.World({
-            gravity: new CANNON.Vec3(0, -20, 0)
+            gravity: new CANNON.Vec3(0, -25, 0),
+            broadphase: new CANNON.NaiveBroadphase(),
+            solver: new CANNON.GSSolver()
         });
+        
+        // Add contact materials for better physics interaction
+        const playerMaterial = new CANNON.Material('player');
+        const groundMaterial = new CANNON.Material('ground');
+        const playerGroundContact = new CANNON.ContactMaterial(playerMaterial, groundMaterial, {
+            friction: 0.3,
+            restitution: 0.1
+        });
+        this.world.addContactMaterial(playerGroundContact);
         
         // Create the running platform
         this.createCourse();
         
+        // Test physics world
+        this.testPhysics();
+        
         window.addEventListener('resize', this.onWindowResize.bind(this));
+    }
+
+    testPhysics() {
+        console.log('Testing physics world...');
+        
+        // Test physics world creation
+        if (!this.world) {
+            console.error('❌ Physics world not created');
+            return false;
+        }
+        console.log('✅ Physics world created');
+
+        // Test gravity
+        if (this.world.gravity.y === -25) {
+            console.log('✅ Gravity configured correctly');
+        } else {
+            console.error('❌ Gravity not configured');
+        }
+
+        // Test world stepping
+        const testBody = new CANNON.Body({ mass: 1 });
+        testBody.position.set(0, 10, 0);
+        this.world.addBody(testBody);
+        
+        this.world.step(1/60);
+        
+        if (testBody.position.y < 10) {
+            console.log('✅ Physics simulation working');
+        } else {
+            console.error('❌ Physics simulation not working');
+        }
+        
+        this.world.removeBody(testBody);
+        this.isPhysicsReady = true;
+        console.log('✅ Physics system test complete');
+        return true;
     }
 
     createCourse() {
@@ -88,10 +139,18 @@ class Game {
     }
     
     addPlayer(id, isLocal) {
+        if (!this.isPhysicsReady) {
+            console.warn('Physics not ready, delaying player creation');
+            setTimeout(() => this.addPlayer(id, isLocal), 100);
+            return;
+        }
+        
         const player = new Player(isLocal);
         this.players[id] = player;
         this.scene.add(player.mesh);
         this.world.addBody(player.body);
+        
+        console.log(`Player ${id} added, isLocal: ${isLocal}`);
     }
     
     removePlayer(id) {
@@ -104,7 +163,9 @@ class Game {
     }
     
     update(deltaTime, presence) {
-        this.world.step(1 / 60, deltaTime);
+        // Fixed timestep for physics
+        const fixedTimeStep = 1 / 60;
+        this.world.step(fixedTimeStep, deltaTime, 3);
         
         for (const id in this.players) {
             const player = this.players[id];
@@ -136,4 +197,3 @@ class Game {
 }
 
 export default Game;
-

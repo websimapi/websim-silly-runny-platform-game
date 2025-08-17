@@ -119,5 +119,5 @@ body.touch-enabled #mobile-controls {
 }
 
 #jump-button::after {
-    content: "";
+    content: "JUMP";
 }

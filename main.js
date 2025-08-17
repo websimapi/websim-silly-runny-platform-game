@@ -10,21 +10,39 @@ function isTouchDevice() {
 }
 
 async function main() {
+    console.log('🚀 Starting game initialization...');
+    
     const room = new WebsimSocket();
     await room.initialize();
+    console.log('✅ WebSocket connection established');
 
     if (isTouchDevice()) {
         document.body.classList.add('touch-enabled');
-        document.getElementById('jump-button').textContent = 'JUMP';
+        console.log('✅ Touch controls enabled');
     }
 
     const game = new Game();
     game.init();
+    console.log('✅ Game initialized');
+
+    // Wait a moment for physics to be ready
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     loadingScreen.style.display = 'none';
+    console.log('✅ Loading screen hidden');
 
     // Add the local player
     game.addPlayer(room.clientId, true);
+    console.log('✅ Local player added');
+
+    // Test movement after everything is loaded
+    setTimeout(() => {
+        const localPlayer = game.players[room.clientId];
+        if (localPlayer && localPlayer.testMovement) {
+            console.log('🧪 Running post-load movement test...');
+            localPlayer.testMovement();
+        }
+    }, 500);
 
     // Initial presence
     room.updatePresence({
@@ -55,26 +73,28 @@ async function main() {
     updatePlayerListUI(room.peers);
 
 
-    // Main game loop
+    // Main game loop with error handling
     let lastTime = 0;
     function animate(time) {
-        requestAnimationFrame(animate);
-        const deltaTime = (time - (lastTime || time)) / 1000;
-        lastTime = time;
+        try {
+            requestAnimationFrame(animate);
+            const deltaTime = Math.min((time - (lastTime || time)) / 1000, 1/30); // Cap delta time
+            lastTime = time;
 
-        const localPlayer = game.players[room.clientId];
-        if (localPlayer) {
-            // Update player input state before game update
-            localPlayer.processInput();
-
-            const { position, quaternion } = localPlayer.getSyncData();
-            room.updatePresence({ position, quaternion });
+            const localPlayer = game.players[room.clientId];
+            if (localPlayer) {
+                const { position, quaternion } = localPlayer.getSyncData();
+                room.updatePresence({ position, quaternion });
+            }
+            
+            game.update(deltaTime, room.presence);
+        } catch (error) {
+            console.error('Game loop error:', error);
         }
-        
-        game.update(deltaTime, room.presence);
     }
 
     animate();
+    console.log('✅ Game loop started');
 }
 
 function updatePlayerListUI(peers) {
