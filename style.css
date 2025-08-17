@@ -60,3 +60,64 @@ body {
     margin-right: 8px;
 }
 
+#mobile-controls {
+    position: absolute;
+    bottom: 30px;
+    width: 100%;
+    display: none; 
+    justify-content: space-between;
+    align-items: flex-end; 
+    padding: 0 40px;
+    box-sizing: border-box;
+    z-index: 20;
+    pointer-events: none; 
+    -webkit-user-select: none; 
+    -ms-user-select: none; 
+    user-select: none;
+}
+
+body.touch-enabled #mobile-controls {
+    display: flex;
+}
+
+#joystick-container {
+    width: 120px;
+    height: 120px;
+    background-color: rgba(128, 128, 128, 0.4);
+    border-radius: 50%;
+    position: relative;
+    pointer-events: all; 
+}
+
+#joystick {
+    width: 60px;
+    height: 60px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border-radius: 50%;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    transition: transform 0.1s;
+}
+
+#jump-button {
+    width: 80px;
+    height: 80px;
+    background-color: rgba(255, 255, 255, 0.4);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 18px;
+    font-weight: bold;
+    -webkit-tap-highlight-color: transparent; 
+    pointer-events: all; 
+}
+
+#jump-button:active {
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+#jump-button::after {
+    content: "JUMP";
+}

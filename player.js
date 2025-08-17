@@ -43,9 +43,101 @@ class Player {
         this.networkQuaternion = new THREE.Quaternion();
 
         if (this.isLocal) {
-            document.addEventListener('keydown', (e) => this.keys[e.key.toLowerCase()] = true);
-            document.addEventListener('keyup', (e) => this.keys[e.key.toLowerCase()] = false);
+            this.setupControls();
         }
+    }
+
+    setupControls() {
+        // Keyboard controls
+        this.keydownHandler = (e) => this.keys[e.key.toLowerCase()] = true;
+        this.keyupHandler = (e) => this.keys[e.key.toLowerCase()] = false;
+        document.addEventListener('keydown', this.keydownHandler);
+        document.addEventListener('keyup', this.keyupHandler);
+        
+        // Touch controls
+        if ('ontouchstart' in window) {
+            this.setupTouchControls();
+        }
+    }
+
+    setupTouchControls() {
+        const joystick = document.getElementById('joystick');
+        const joystickContainer = document.getElementById('joystick-container');
+        const jumpButton = document.getElementById('jump-button');
+
+        let joystickTouchId = null;
+        let joystickStartPos = { x: 0, y: 0 };
+        const joystickThreshold = 10;
+        const maxJoystickDist = joystickContainer.clientWidth / 2;
+
+        joystickContainer.addEventListener('touchstart', (e) => {
+            if (joystickTouchId === null) {
+                e.preventDefault();
+                joystickTouchId = e.changedTouches[0].identifier;
+                const rect = joystickContainer.getBoundingClientRect();
+                joystickStartPos.x = rect.left + rect.width / 2;
+                joystickStartPos.y = rect.top + rect.height / 2;
+                this.updateJoystick(e.changedTouches[0], joystick, joystickStartPos, maxJoystickDist, joystickThreshold);
+            }
+        }, { passive: false });
+
+        document.addEventListener('touchmove', (e) => {
+            if (joystickTouchId !== null) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                         e.preventDefault();
+                        this.updateJoystick(e.changedTouches[i], joystick, joystickStartPos, maxJoystickDist, joystickThreshold);
+                    }
+                }
+            }
+        }, { passive: false });
+
+        const resetJoystick = (e) => {
+             if (joystickTouchId !== null) {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === joystickTouchId) {
+                        joystickTouchId = null;
+                        joystick.style.transform = `translate(-50%, -50%)`;
+                        this.keys['w'] = this.keys['s'] = this.keys['a'] = this.keys['d'] = false;
+                    }
+                }
+            }
+        };
+        document.addEventListener('touchend', resetJoystick);
+        document.addEventListener('touchcancel', resetJoystick);
+
+        jumpButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.keys[' '] = true;
+        }, { passive: false });
+        jumpButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.keys[' '] = false;
+        }, { passive: false });
+    }
+
+    updateJoystick(touch, joystickEl, startPos, maxDist, threshold) {
+        const dx = touch.clientX - startPos.x;
+        const dy = touch.clientY - startPos.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const clampedDx = Math.min(Math.max(dx / maxDist, -1), 1);
+        const clampedDy = Math.min(Math.max(dy / maxDist, -1), 1);
+
+        const angle = Math.atan2(clampedDx, clampedDy);
+        const stickX = Math.sin(angle) * Math.min(distance, maxDist);
+        const stickY = Math.cos(angle) * Math.min(distance, maxDist);
+
+        joystickEl.style.transform = `translate(-50%, -50%) translate(${stickX}px, ${stickY}px)`;
+
+        // Update keys based on joystick position
+        const forward = -clampedDy;
+        const right = clampedDx;
+
+        this.keys['w'] = forward > threshold / maxDist;
+        this.keys['s'] = forward < -threshold / maxDist;
+        this.keys['a'] = right < -threshold / maxDist;
+        this.keys['d'] = right > threshold / maxDist;
     }
     
     update(deltaTime, presenceState) {
@@ -121,11 +213,10 @@ class Player {
 
     dispose() {
         if (this.isLocal) {
-             document.removeEventListener('keydown', (e) => this.keys[e.key.toLowerCase()] = true);
-             document.removeEventListener('keyup', (e) => this.keys[e.key.toLowerCase()] = false);
+             document.removeEventListener('keydown', this.keydownHandler);
+             document.removeEventListener('keyup', this.keyupHandler);
         }
     }
 }
 
 export default Player;
-

@@ -3,9 +3,19 @@ import Game from './game.js';
 const loadingScreen = document.getElementById('loading-screen');
 const playerListElement = document.getElementById('player-list');
 
+function isTouchDevice() {
+    return (('ontouchstart' in window) ||
+           (navigator.maxTouchPoints > 0) ||
+           (navigator.msMaxTouchPoints > 0));
+}
+
 async function main() {
     const room = new WebsimSocket();
     await room.initialize();
+
+    if (isTouchDevice()) {
+        document.body.classList.add('touch-enabled');
+    }
 
     const game = new Game();
     game.init();
@@ -75,4 +85,3 @@ function updatePlayerListUI(peers) {
 
 
 main().catch(console.error);
-
