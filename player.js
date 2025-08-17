@@ -37,10 +37,20 @@ class Player {
             mass: 5,
             material: new CANNON.Material('player'),
             linearDamping: 0.4,
-            angularDamping: 1.0
+            angularDamping: 1.0,
+            fixedRotation: true // Prevent the player from rotating randomly
         });
         this.body.addShape(shape);
         this.body.position.set(Math.random() * 10 - 5, 5, 0);
+
+        // Movement state tracking
+        this.movementState = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            jump: false
+        };
 
         // For smoothing remote player movement
         this.networkPosition = new THREE.Vector3();
@@ -48,35 +58,55 @@ class Player {
 
         if (this.isLocal) {
             this.setupControls();
-            this.testMovement();
+            // Delay test until physics is ready
+            setTimeout(() => this.testMovement(), 200);
         }
     }
 
     testMovement() {
-        console.log('Testing movement system...');
+        console.log('🧪 Testing movement system...');
         
         // Test physics body creation
         if (!this.body) {
             console.error('❌ Physics body not created');
             return false;
         }
-        console.log('✅ Physics body created');
+        console.log('✅ Physics body created, mass:', this.body.mass);
+
+        // Test world connection
+        if (!this.body.world) {
+            console.error('❌ Physics body not added to world');
+            return false;
+        }
+        console.log('✅ Physics body added to world');
 
         // Test initial position
         const initialPos = this.body.position;
-        console.log('✅ Initial position:', initialPos.x, initialPos.y, initialPos.z);
+        console.log('✅ Initial position:', initialPos.x.toFixed(2), initialPos.y.toFixed(2), initialPos.z.toFixed(2));
+
+        // Test velocity application directly
+        console.log('🧪 Testing direct velocity application...');
+        this.body.velocity.set(0, 0, -5); // Move forward
+        console.log('✅ Velocity set to:', this.body.velocity.x, this.body.velocity.y, this.body.velocity.z);
+
+        // Reset after a moment
+        setTimeout(() => {
+            this.body.velocity.set(0, 0, 0);
+            console.log('✅ Velocity reset');
+        }, 100);
 
         // Test key input simulation
-        this.keys['w'] = true;
-        this.handleInput();
+        console.log('🧪 Testing key input simulation...');
+        this.movementState.forward = true;
+        this.applyMovement();
+        
         if (Math.abs(this.body.velocity.z) > 0) {
-            console.log('✅ Forward movement test passed');
+            console.log('✅ Movement input test passed, velocity Z:', this.body.velocity.z);
         } else {
-            console.error('❌ Forward movement test failed');
+            console.error('❌ Movement input test failed, velocity Z:', this.body.velocity.z);
         }
-        this.keys['w'] = false;
-
-        // Reset velocity
+        
+        this.movementState.forward = false;
         this.body.velocity.set(0, 0, 0);
 
         console.log('✅ Movement system test complete');
@@ -87,16 +117,75 @@ class Player {
         // Keyboard controls with better event handling
         this.keydownHandler = (e) => {
             const key = e.key.toLowerCase();
-            if (['w', 'a', 's', 'd', ' '].includes(key)) {
-                e.preventDefault();
-                this.keys[key] = true;
+            console.log('Key down:', key); // Debug log
+            
+            switch(key) {
+                case 'w':
+                case 'arrowup':
+                    e.preventDefault();
+                    this.keys['w'] = true;
+                    this.movementState.forward = true;
+                    break;
+                case 's':
+                case 'arrowdown':
+                    e.preventDefault();
+                    this.keys['s'] = true;
+                    this.movementState.backward = true;
+                    break;
+                case 'a':
+                case 'arrowleft':
+                    e.preventDefault();
+                    this.keys['a'] = true;
+                    this.movementState.left = true;
+                    break;
+                case 'd':
+                case 'arrowright':
+                    e.preventDefault();
+                    this.keys['d'] = true;
+                    this.movementState.right = true;
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    this.keys[' '] = true;
+                    this.movementState.jump = true;
+                    break;
             }
         };
+        
         this.keyupHandler = (e) => {
             const key = e.key.toLowerCase();
-            if (['w', 'a', 's', 'd', ' '].includes(key)) {
-                e.preventDefault();
-                this.keys[key] = false;
+            console.log('Key up:', key); // Debug log
+            
+            switch(key) {
+                case 'w':
+                case 'arrowup':
+                    e.preventDefault();
+                    this.keys['w'] = false;
+                    this.movementState.forward = false;
+                    break;
+                case 's':
+                case 'arrowdown':
+                    e.preventDefault();
+                    this.keys['s'] = false;
+                    this.movementState.backward = false;
+                    break;
+                case 'a':
+                case 'arrowleft':
+                    e.preventDefault();
+                    this.keys['a'] = false;
+                    this.movementState.left = false;
+                    break;
+                case 'd':
+                case 'arrowright':
+                    e.preventDefault();
+                    this.keys['d'] = false;
+                    this.movementState.right = false;
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    this.keys[' '] = false;
+                    this.movementState.jump = false;
+                    break;
             }
         };
         
@@ -107,6 +196,8 @@ class Player {
         if ('ontouchstart' in window) {
             this.setupTouchControls();
         }
+
+        console.log('✅ Controls setup complete');
     }
 
     setupTouchControls() {
@@ -141,7 +232,10 @@ class Player {
                 isJoystickActive = false;
                 joystick.style.transform = `translate(-50%, -50%)`;
                 this.moveVector.set(0, 0);
-                this.keys['w'] = this.keys['s'] = this.keys['a'] = this.keys['d'] = false;
+                this.movementState.forward = false;
+                this.movementState.backward = false;
+                this.movementState.left = false;
+                this.movementState.right = false;
             }
         };
         
@@ -151,12 +245,12 @@ class Player {
         // Jump button
         jumpButton.addEventListener('touchstart', (e) => {
             e.preventDefault();
-            this.keys[' '] = true;
+            this.movementState.jump = true;
         }, { passive: false });
         
         jumpButton.addEventListener('touchend', (e) => {
             e.preventDefault();
-            this.keys[' '] = false;
+            this.movementState.jump = false;
         }, { passive: false });
     }
 
@@ -168,7 +262,10 @@ class Player {
         if (distance < deadzone) {
             this.moveVector.set(0, 0);
             joystickEl.style.transform = `translate(-50%, -50%)`;
-            this.keys['w'] = this.keys['s'] = this.keys['a'] = this.keys['d'] = false;
+            this.movementState.forward = false;
+            this.movementState.backward = false;
+            this.movementState.left = false;
+            this.movementState.right = false;
             return;
         }
 
@@ -186,12 +283,54 @@ class Player {
         this.moveVector.x = Math.max(-1, Math.min(1, this.moveVector.x));
         this.moveVector.y = Math.max(-1, Math.min(1, this.moveVector.y));
 
-        // Update key states based on joystick
+        // Update movement state based on joystick
         const threshold = 0.3;
-        this.keys['w'] = this.moveVector.y > threshold;
-        this.keys['s'] = this.moveVector.y < -threshold;
-        this.keys['a'] = this.moveVector.x < -threshold;
-        this.keys['d'] = this.moveVector.x > threshold;
+        this.movementState.forward = this.moveVector.y > threshold;
+        this.movementState.backward = this.moveVector.y < -threshold;
+        this.movementState.left = this.moveVector.x < -threshold;
+        this.movementState.right = this.moveVector.x > threshold;
+    }
+
+    applyMovement() {
+        if (!this.body || !this.body.world) {
+            console.warn('Cannot apply movement: physics not ready');
+            return;
+        }
+
+        const speed = 15;
+        let moveX = 0;
+        let moveZ = 0;
+
+        // Use either joystick or keyboard input
+        if (Math.abs(this.moveVector.x) > 0.1 || Math.abs(this.moveVector.y) > 0.1) {
+            // Use joystick input
+            moveX = this.moveVector.x * speed;
+            moveZ = this.moveVector.y * speed;
+        } else {
+            // Use movement state
+            if (this.movementState.left) moveX = -speed;
+            if (this.movementState.right) moveX = speed;
+            if (this.movementState.forward) moveZ = -speed;
+            if (this.movementState.backward) moveZ = speed;
+        }
+
+        // Apply movement with direct velocity setting
+        this.body.velocity.x = moveX;
+        this.body.velocity.z = moveZ;
+
+        // Debug log for movement
+        if (moveX !== 0 || moveZ !== 0) {
+            console.log('Applying movement - X:', moveX, 'Z:', moveZ, 'Current velocity:', this.body.velocity.x, this.body.velocity.z);
+        }
+
+        // Jump
+        if (this.movementState.jump && this.isGrounded && this.jumpCooldown <= 0) {
+            const jumpForce = 18;
+            this.body.velocity.y = jumpForce;
+            this.jumpCooldown = 0.2;
+            this.isGrounded = false;
+            console.log('Jumping with force:', jumpForce);
+        }
     }
     
     update(deltaTime, presenceState) {
@@ -200,7 +339,7 @@ class Player {
         }
 
         if (this.isLocal) {
-            this.handleInput(deltaTime);
+            this.applyMovement();
             this.checkGrounded();
         } else if(presenceState) {
             this.networkPosition.set(
@@ -223,42 +362,6 @@ class Player {
         // Always sync mesh to physics body for local player
         this.mesh.position.copy(this.body.position);
         this.mesh.quaternion.copy(this.body.quaternion);
-    }
-    
-    handleInput(deltaTime) {
-        const speed = 15;
-        const jumpForce = 18;
-        
-        // Get current velocity
-        const velocity = this.body.velocity;
-        
-        // Calculate movement direction
-        let moveX = 0;
-        let moveZ = 0;
-
-        // Use either joystick or keyboard input
-        if (Math.abs(this.moveVector.x) > 0.1 || Math.abs(this.moveVector.y) > 0.1) {
-            // Use joystick input
-            moveX = this.moveVector.x * speed;
-            moveZ = this.moveVector.y * speed;
-        } else {
-            // Use keyboard input
-            if (this.keys['a']) moveX = -speed;
-            if (this.keys['d']) moveX = speed;
-            if (this.keys['w']) moveZ = -speed;
-            if (this.keys['s']) moveZ = speed;
-        }
-
-        // Apply movement
-        this.body.velocity.x = moveX;
-        this.body.velocity.z = moveZ;
-
-        // Jump
-        if (this.keys[' '] && this.isGrounded && this.jumpCooldown <= 0) {
-            this.body.velocity.y = jumpForce;
-            this.jumpCooldown = 0.2; // Prevent double jumping
-            this.isGrounded = false;
-        }
     }
     
     checkGrounded() {
