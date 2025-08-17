@@ -15,6 +15,7 @@ async function main() {
 
     if (isTouchDevice()) {
         document.body.classList.add('touch-enabled');
+        document.getElementById('jump-button').textContent = 'JUMP';
     }
 
     const game = new Game();
@@ -63,6 +64,9 @@ async function main() {
 
         const localPlayer = game.players[room.clientId];
         if (localPlayer) {
+            // Update player input state before game update
+            localPlayer.processInput();
+
             const { position, quaternion } = localPlayer.getSyncData();
             room.updatePresence({ position, quaternion });
         }
