@@ -2,10 +2,10 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
 class Player {
-    constructor(isLocal, camera) {
+    constructor(isLocal) {
         this.isLocal = isLocal;
-        this.camera = camera; // Used for camera-relative movement
         this.keys = {};
+        this.joystick = { x: 0, y: 0 }; // For analog mobile controls
         
         // Create a wacky character model
         const head = new THREE.Mesh(
@@ -34,9 +34,7 @@ class Player {
         this.body = new CANNON.Body({
             mass: 5,
             material: new CANNON.Material('player'),
-            angularDamping: 0.9,
-            linearDamping: 0.9, // Add damping to slow down the player naturally
-            fixedRotation: true, // Prevent player from tipping over
+            angularDamping: 1.0
         });
         this.body.addShape(shape, new CANNON.Vec3(0, 0, 0));
         this.body.position.set(Math.random() * 10 - 5, 5, 0);
@@ -102,6 +100,8 @@ class Player {
                         joystickTouchId = null;
                         joystick.style.transform = `translate(-50%, -50%)`;
                         this.keys['w'] = this.keys['s'] = this.keys['a'] = this.keys['d'] = false;
+                        this.joystick.x = 0;
+                        this.joystick.y = 0;
                     }
                 }
             }
@@ -124,29 +124,34 @@ class Player {
         const dy = touch.clientY - startPos.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        const clampedDx = Math.min(Math.max(dx / maxDist, -1), 1);
-        const clampedDy = Math.min(Math.max(dy / maxDist, -1), 1);
+        let clampedDx = Math.min(Math.max(dx / maxDist, -1), 1);
+        let clampedDy = Math.min(Math.max(dy / maxDist, -1), 1);
+        
+        if (distance < threshold) {
+            clampedDx = 0;
+            clampedDy = 0;
+        }
 
-        const angle = Math.atan2(clampedDx, clampedDy);
-        const stickX = Math.sin(angle) * Math.min(distance, maxDist);
-        const stickY = Math.cos(angle) * Math.min(distance, maxDist);
+        const stickX = clampedDx * maxDist;
+        const stickY = clampedDy * maxDist;
 
         joystickEl.style.transform = `translate(-50%, -50%) translate(${stickX}px, ${stickY}px)`;
 
-        // Update keys based on joystick position
-        const forward = -clampedDy;
-        const right = clampedDx;
+        // Update joystick state for analog movement
+        this.joystick.x = clampedDx;
+        this.joystick.y = -clampedDy; // Invert Y for forward movement
 
-        this.keys['w'] = forward > threshold / maxDist;
-        this.keys['s'] = forward < -threshold / maxDist;
-        this.keys['a'] = right < -threshold / maxDist;
-        this.keys['d'] = right > threshold / maxDist;
+        // Update keys for compatibility, though analog values are preferred
+        this.keys['w'] = this.joystick.y > 0.1;
+        this.keys['s'] = this.joystick.y < -0.1;
+        this.keys['a'] = this.joystick.x < -0.1;
+        this.keys['d'] = this.joystick.x > 0.1;
     }
     
     update(deltaTime, presenceState) {
         if (this.isLocal) {
-            this.handleInput(deltaTime);
-        } else if(presenceState && presenceState.position) {
+            this.handleInput();
+        } else if(presenceState) {
             this.networkPosition.set(
                 presenceState.position.x,
                 presenceState.position.y,
@@ -161,86 +166,58 @@ class Player {
 
             this.mesh.position.lerp(this.networkPosition, 0.2);
             this.mesh.quaternion.slerp(this.networkQuaternion, 0.2);
-            // Also sync physics body for remote players for potential interactions
-            if (this.body) {
-                this.body.position.copy(this.mesh.position);
-                this.body.quaternion.copy(this.mesh.quaternion);
-            }
             return;
         }
 
         // Always sync mesh to physics body for local player
-        if (this.body) {
-            this.mesh.position.copy(this.body.position);
-            this.mesh.quaternion.copy(this.body.quaternion);
-        }
+        this.mesh.position.copy(this.body.position);
+        this.mesh.quaternion.copy(this.body.quaternion);
     }
     
-    handleInput(deltaTime) {
-        const speed = 2.5;
-        const jumpForce = 100;
+    handleInput() {
+        const speed = 20;
+        const jumpForce = 20;
         
-        const forward = new THREE.Vector3();
-        const right = new THREE.Vector3();
-        
-        this.camera.getWorldDirection(forward);
-        forward.y = 0;
-        forward.normalize();
-        
-        right.crossVectors(this.camera.up, forward).normalize();
-        
-        const impulse = new CANNON.Vec3(0, 0, 0);
-        let appliedImpulse = false;
+        let moveX = 0;
+        let moveZ = 0;
 
-        // Forward/backward movement
-        if (this.keys['w']) {
-            impulse.x -= forward.x * speed;
-            impulse.z -= forward.z * speed;
-            appliedImpulse = true;
-        }
-        if (this.keys['s']) {
-            impulse.x += forward.x * speed;
-            impulse.z += forward.z * speed;
-            appliedImpulse = true;
-        }
+        // Keyboard input
+        if (this.keys['w']) moveZ = -1;
+        if (this.keys['s']) moveZ = 1;
+        if (this.keys['a']) moveX = -1;
+        if (this.keys['d']) moveX = 1;
         
-        // Left/right movement
-        if (this.keys['a']) {
-            impulse.x += right.x * speed;
-            impulse.z += right.z * speed;
-            appliedImpulse = true;
-        }
-        if (this.keys['d']) {
-            impulse.x -= right.x * speed;
-            impulse.z -= right.z * speed;
-            appliedImpulse = true;
-        }
-        
-        if(appliedImpulse) {
-             this.body.applyImpulse(impulse, this.body.position);
+        // Mobile analog input overrides keyboard
+        if (Math.abs(this.joystick.x) > 0.1 || Math.abs(this.joystick.y) > 0.1) {
+            moveX = this.joystick.x;
+            moveZ = -this.joystick.y;
         }
 
+        // Apply velocities
+        if (Math.abs(moveZ) > 0) {
+            this.body.velocity.z = moveZ * speed;
+        } else {
+             this.body.velocity.z *= 0.9; // damping
+        }
+
+        if (Math.abs(moveX) > 0) {
+            this.body.velocity.x = moveX * speed;
+        } else {
+            this.body.velocity.x *= 0.9; // damping
+        }
+        
         // Jump
-        if (this.keys[' ']) {
-           if (this.canJump()) {
-             this.body.applyImpulse(new CANNON.Vec3(0, jumpForce, 0), this.body.position);
-           }
-           // Prevent continuous jumping by consuming the key press
-           this.keys[' '] = false;
+        if (this.keys[' '] && this.canJump()) {
+           this.body.velocity.y = jumpForce;
         }
     }
     
     canJump() {
         const from = this.body.position;
-        const to = new CANNON.Vec3(from.x, from.y - 1.01, from.z); // Ray slightly longer than sphere radius
+        const to = new CANNON.Vec3(from.x, from.y - 1.1, from.z);
         const result = new CANNON.RaycastResult();
-        // Use a temporary variable for the world if this.body.world is not guaranteed
-        const world = this.body.world;
-        if (world) {
-             world.raycastClosest(from, to, {}, result);
-             return result.hasHit;
-        }
-        return false;
+        this.body.world.raycastClosest(from, to, {}, result);
+        return result.hasHit;
     }
 
     getSyncData() {

@@ -88,7 +88,7 @@ class Game {
     }
     
     addPlayer(id, isLocal) {
-        const player = new Player(isLocal, this.camera);
+        const player = new Player(isLocal);
         this.players[id] = player;
         this.scene.add(player.mesh);
         this.world.addBody(player.body);
@@ -136,3 +136,4 @@ class Game {
 }
 
 export default Game;
+
